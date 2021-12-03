@@ -1,3 +1,11 @@
+//----------------------------------------------------------------------
+// RateAdaptor.cpp:
+//   AE buffer sample rate adjustment class implementation
+//
+//          Copyright (C) 2020-2029 by Jun Mo, All rights reserved.
+//
+//----------------------------------------------------------------------
+
 #include <memory.h>
 #include <stdio.h>
 #include "RateAdaptor.h"
@@ -53,7 +61,7 @@ int CRateAdaptor::DoRateAdaptor(complex_int InputSignal[], int Length, unsigned 
 		// determine how many input samples to generate next down sampled data
 		FillToNext = 0;
 		Nco = CodeRateAdjustNco;
-		while ((Nco & 0xff000000) == 0)
+		while (((Nco & 0xff000000) == 0) && FillToNext <= Length)
 		{
 			FillToNext ++;
 			Nco += CodeRateAdjustRatio;

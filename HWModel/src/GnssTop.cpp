@@ -1,9 +1,18 @@
+//----------------------------------------------------------------------
+// GnssTop.cpp:
+//   GNSS baseband top module class implementation
+//
+//          Copyright (C) 2020-2029 by Jun Mo, All rights reserved.
+//
+//----------------------------------------------------------------------
+
 #include <stdio.h>
 #include <malloc.h>
 #include <memory.h>
 #include "CommonOps.h"
 #include "RegAddress.h"
 #include "GnssTop.h"
+#include "E1_code.h"
 
 CGnssTop::CGnssTop() : TeFifo(0, 10240), TrackingEngine(&TeFifo, MemCodeBuffer), AcqEngine(MemCodeBuffer)
 {
@@ -13,6 +22,7 @@ CGnssTop::CGnssTop() : TeFifo(0, 10240), TrackingEngine(&TeFifo, MemCodeBuffer),
 	ReqCount = 0;
 	InterruptFlag = 0;
 
+	memcpy(MemCodeBuffer, GalE1Code, sizeof(GalE1Code));	// memory code put in MemCodeBuffer as ROM
 	FileData = (complex_int *)malloc(MAX_BLOCK_SIZE * sizeof(complex_int));
 	SampleQuant = (unsigned char *)malloc(MAX_BLOCK_SIZE * sizeof(unsigned char));
 
@@ -158,10 +168,8 @@ U32 CGnssTop::GetRegValue(int Address)
 		return 0;
 	case ADDR_BASE_TE_BUFFER:
 		return TrackingEngine.TEBuffer[AddressOffset >> 2];
-		break;
 	case ADDR_BASE_AE_BUFFER:
 		return AcqEngine.ChannelConfig[AddressOffset >> 5][(AddressOffset >> 2) & 0x7];
-		break;
 	default:
 		return 0;
 	}
@@ -173,7 +181,8 @@ int CGnssTop::Process(int ReadBlockSize)
 	int ReachThreshold = 0;
 	int SampleNumber;
 
-	IfFile.ReadFile(ReadBlockSize, FileData);
+	if (!IfFile.ReadFile(ReadBlockSize, FileData))
+		return -1;
 	if (AcqEngine.IsFillingBuffer())
 	{
 		SampleNumber = AcqEngine.RateAdaptor.DoRateAdaptor(FileData, ReadBlockSize, SampleQuant);
@@ -202,5 +211,5 @@ int CGnssTop::Process(int ReadBlockSize)
 	if ((InterruptFlag & IntMask) && InterruptService != NULL )
 		InterruptService();
 
-	return ReachThreshold;
+	return 0;
 }

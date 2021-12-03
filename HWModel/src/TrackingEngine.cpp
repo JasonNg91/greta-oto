@@ -1,3 +1,11 @@
+//----------------------------------------------------------------------
+// TrackingEngine.cpp:
+//   Tracking engine class implementation
+//
+//          Copyright (C) 2020-2029 by Jun Mo, All rights reserved.
+//
+//----------------------------------------------------------------------
+
 #include <stdio.h>
 #include <malloc.h>
 #include <memory.h>
@@ -18,7 +26,6 @@ CTrackingEngine::CTrackingEngine(CTeFifoMem *pTeFifo, unsigned int *MemCodeBuffe
 	memset(TEBuffer, 0, TE_BUFFER_SIZE);
 
 	FifoData = (complex_int *)malloc(65536 * sizeof(complex_int));
-	DownConvertData = (complex_int *)malloc(65536 * sizeof(complex_int));
 }
 
 CTrackingEngine::~CTrackingEngine()
@@ -26,7 +33,6 @@ CTrackingEngine::~CTrackingEngine()
 	int i;
 	free(TEBuffer);
 	free(FifoData);
-	free(DownConvertData);
 	for (i = 0; i < PHYSICAL_CHANNEL_NUMBER; i ++)
 		delete Correlator[i];
 }
@@ -37,6 +43,7 @@ void CTrackingEngine::Reset()
 
 	for (i = 0; i < PHYSICAL_CHANNEL_NUMBER; i ++)
 		Correlator[i]->Reset();
+	NoiseCalc.Reset();
 	ChannelEnable = CohDataReady = 0;
 	OverwriteProtectAddr = 0;
 	OverwriteProtectValue = 0;
@@ -74,6 +81,12 @@ void CTrackingEngine::SetRegValue(int Address, U32 Value)
 	case ADDR_OFFSET_TE_CODE_LENGTH2:
 		PrnPolyLength[3] = Value;
 		break;
+	case ADDR_OFFSET_TE_NOISE_CONFIG:
+		NoiseCalc.SetSmoothFactor(Value);
+		break;
+	case ADDR_OFFSET_TE_NOISE_FLOOR:
+		NoiseCalc.SetNoise(Value);
+		break;
 	default:
 		break;
 	}
@@ -102,6 +115,10 @@ U32 CTrackingEngine::GetRegValue(int Address)
 		return PrnPolyLength[2];
 	case ADDR_OFFSET_TE_CODE_LENGTH2:
 		return PrnPolyLength[3];
+	case ADDR_OFFSET_TE_NOISE_CONFIG:
+		return NoiseCalc.SmoothFactor;
+	case ADDR_OFFSET_TE_NOISE_FLOOR:
+		return NoiseCalc.GetNoise();
 	default:
 		return 0;
 	}
@@ -123,6 +140,7 @@ int CTrackingEngine::ProcessData()
 	int ReadNumber;
 	unsigned int CohData;
 	S16 CohDataI, CohDataQ;
+	int FirstRound = 1;
 
 	// clear coherent data ready flag and overwrite protect flag
 	CohDataReady = 0;
@@ -139,6 +157,8 @@ int CTrackingEngine::ProcessData()
 	EnableMask = ChannelEnable;
 	while (EnableMask)
 	{
+		if (FirstRound)
+			Correlator[0]->NoiseCalc = &NoiseCalc;
 		// find at most 4 active channel
 		TrackingChannelCount = 0;
 		while (EnableMask && TrackingChannelCount < PHYSICAL_CHANNEL_NUMBER)
@@ -148,11 +168,6 @@ int CTrackingEngine::ProcessData()
 			TrackingChannelCount ++;
 		}
 		
-		// fill state buffer for all physical channels
-		for (i = 0; i < TrackingChannelCount; i ++)
-		{
-			Correlator[i]->FillState(&TEBuffer[TrackingChannelIndex[i] << 5]);
-		}
 		// read data from TE FIFO
 		pTeFifo->ReadData(ReadNumber, FifoData);
 //		for (i = 0; i < ReadNumber; i ++)
@@ -161,9 +176,8 @@ int CTrackingEngine::ProcessData()
 		// process all physical channels
 		for (i = 0; i < TrackingChannelCount; i ++)
 		{
-			Correlator[i]->DownConvert(ReadNumber, FifoData, DownConvertData);
 			// if any correlator reaches coherent value, set data ready flag
-			if (Correlator[i]->Correlation(ReadNumber, DownConvertData, DumpDataI, DumpDataQ, CorIndex, DumpCount))
+			if (Correlator[i]->Correlation(&TEBuffer[TrackingChannelIndex[i] << 5], ReadNumber, FifoData, DumpDataI, DumpDataQ, CorIndex, DumpCount))
 				CohDataReady |= 1 << TrackingChannelIndex[i];
 			for (j = 0; j < DumpCount; j ++)
 			{
@@ -189,13 +203,10 @@ int CTrackingEngine::ProcessData()
 				TEBuffer[COH_OFFSET(TrackingChannelIndex[i], CorIndex[j])] = CohData;
 			}
 		}
-		// dump state buffer for all physical channels
-		for (i = 0; i < TrackingChannelCount; i ++)
-		{
-			Correlator[i]->DumpState(&TEBuffer[TrackingChannelIndex[i] << 5]);
-		}
 		// rewind FIFO read pointer
 		pTeFifo->RewindPointer();
+		FirstRound = 0;
+		Correlator[0]->NoiseCalc = NULL;
 	}
 	pTeFifo->SkipBlock();
 

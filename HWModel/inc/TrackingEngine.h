@@ -1,9 +1,18 @@
-#if !defined __TRACKING_ENGINE_LITE_H__
-#define __TRACKING_ENGINE_LITE_H__
+//----------------------------------------------------------------------
+// TrackingEngine.cpp:
+//   Tracking engine class declaration
+//
+//          Copyright (C) 2020-2029 by Jun Mo, All rights reserved.
+//
+//----------------------------------------------------------------------
+
+#if !defined __TRACKING_ENGINE_H__
+#define __TRACKING_ENGINE_H__
 
 #include "CommonOps.h"
 #include "Correlator.h"
 #include "TeFifoMem.h"
+#include "NoiseCalc.h"
 
 #define PHYSICAL_CHANNEL_NUMBER 4
 #define LOGICAL_CHANNEL_NUMBER 32
@@ -33,8 +42,8 @@ public:
 	unsigned int *TEBuffer;
 	CTeFifoMem *pTeFifo;
 	CCorrelator *Correlator[PHYSICAL_CHANNEL_NUMBER];
+	CNoiseCalc NoiseCalc;
 	complex_int *FifoData;
-	complex_int *DownConvertData;
 };
 
-#endif //__TRACKING_ENGINE_LITE_H__
+#endif //__TRACKING_ENGINE_H__

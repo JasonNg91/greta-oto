@@ -79,6 +79,8 @@ reg [31:0] te_code_length2;
 reg [31:0] te_channel_ow_protect;
 reg [9:0] te_ow_protect_addr;
 reg [31:0] te_ow_protect_value;
+reg [1:0] te_noise_config;
+wire [15:0] te_noise_floor;
 
 // write registers
 always @(posedge clk or negedge rst_b)
@@ -97,6 +99,7 @@ always @(posedge clk or negedge rst_b)
 			`TE_CODE_LENGTH        : te_code_length    <= te_d4wt;
 			`TE_POLYNOMIAL2        : te_polynomial2    <= te_d4wt;
 			`TE_CODE_LENGTH2       : te_code_length2   <= te_d4wt;
+			`TE_NOISE_CONFIG       : te_noise_config   <= te_d4wt[1:0];
 		endcase
 	end
 
@@ -113,6 +116,8 @@ always @ (*) begin
 			`TE_CODE_LENGTH           : te_reg_d4rd = te_code_length;
 			`TE_POLYNOMIAL2           : te_reg_d4rd = te_polynomial2;
 			`TE_CODE_LENGTH2          : te_reg_d4rd = te_code_length2;
+			`TE_NOISE_CONFIG          : te_reg_d4rd = {30'h0, te_noise_config};
+			`TE_NOISE_FLOOR           : te_reg_d4rd = {16'h0, te_noise_floor};
 			`TE_CURR_STATE_MACHINE    : te_reg_d4rd = {12'h0, next_te_state, 12'h0, cur_te_state};
 			default                   : te_reg_d4rd = 32'h0;
 		endcase
@@ -343,6 +348,7 @@ wire [3:0]  prn_code2 [3:0];
 wire [2:0]  current_cor [3:0];
 wire [3:0]  code_sub_phase;
 wire [3:0]  dumping;
+wire [3:0]  overwrite_protect;
 wire [3:0]  msdata_done;
 wire [3:0]  coherent_done;
 wire [15:0] ms_data_sum [3:0];
@@ -374,6 +380,7 @@ dump_state u_dump_state
 		.current_cor_0          (current_cor[0]            ),
 		.code_sub_phase_0       (code_sub_phase[0]         ),
 		.dumping_0              (dumping[0]                ),
+		.overwrite_protect_0    (overwrite_protect[0]      ), 
 		.msdata_done_0          (msdata_done[0]            ),
 		.coherent_done_0        (coherent_done[0]          ),
 		.ms_data_sum_0          (ms_data_sum[0]            ),
@@ -396,6 +403,7 @@ dump_state u_dump_state
 		.current_cor_1          (current_cor[1]            ),
 		.code_sub_phase_1       (code_sub_phase[1]         ),
 		.dumping_1              (dumping[1]                ),
+		.overwrite_protect_1    (overwrite_protect[1]      ), 
 		.msdata_done_1          (msdata_done[1]            ),
 		.coherent_done_1        (coherent_done[1]          ),
 		.ms_data_sum_1          (ms_data_sum[1]            ),
@@ -418,6 +426,7 @@ dump_state u_dump_state
 		.current_cor_2          (current_cor[2]            ),
 		.code_sub_phase_2       (code_sub_phase[2]         ),
 		.dumping_2              (dumping[2]                ),
+		.overwrite_protect_2    (overwrite_protect[2]      ), 
 		.msdata_done_2          (msdata_done[2]            ),
 		.coherent_done_2        (coherent_done[2]          ),
 		.ms_data_sum_2          (ms_data_sum[2]            ),
@@ -440,6 +449,7 @@ dump_state u_dump_state
 		.current_cor_3          (current_cor[3]            ),
 		.code_sub_phase_3       (code_sub_phase[3]         ),
 		.dumping_3              (dumping[3]                ),
+		.overwrite_protect_3    (overwrite_protect[3]      ), 
 		.msdata_done_3          (msdata_done[3]            ),
 		.coherent_done_3        (coherent_done[3]          ),
 		.ms_data_sum_3          (ms_data_sum[3]            ),
@@ -467,9 +477,14 @@ wire [31:0] cor_memcode_data;
 wire [ 4:0] cor_dump_index [3:0];
 wire [15:0] i_coherent_sum [3:0];
 wire [15:0] q_coherent_sum [3:0];
+
+wire [3:0] data_down_en;
+wire [5:0] i_data_down [3:0];
+wire [5:0] q_data_down [3:0];
+wire [3:0] shift_code;
+
 wire [3:0] coherent_sum_valid;
 wire [3:0] cor_ready;
-wire [3:0] overwrite_protect;
 
 generate
 	for (i_gen = 0; i_gen < 4; i_gen = i_gen + 1)
@@ -574,6 +589,11 @@ generate
 		.q_coherent_sum         (q_coherent_sum[i_gen]     ),
 		.coherent_sum_valid     (coherent_sum_valid[i_gen] ),
 	
+		.data_down_en           (data_down_en[i_gen]       ),
+		.i_data_down            (i_data_down[i_gen]        ),
+		.q_data_down            (q_data_down[i_gen]        ),
+		.shift_code             (shift_code[i_gen]         ),
+
 		.fill_finished          (fill_state_done           ),
 		.cor_ready              (cor_ready[i_gen]          ),
 		.msdata_done_o          (msdata_done[i_gen]        ),
@@ -824,5 +844,33 @@ assign coh_buffer_wdata = coherent_access ? coherent_d4wt : (cur_te_state == DUM
 assign coherent_d4rd = coh_buffer_rdata;
 assign state_d4rd = coh_buffer_rdata;
 assign te_buffer_d4rd = coh_buffer_rdata;
+
+
+//----------------------------------------------------------
+// noise floor calculation
+//----------------------------------------------------------
+reg first_round;
+
+always @(posedge clk or negedge rst_b)
+	if (!rst_b)
+		first_round <= 1'b0;
+	else if ((cur_te_state == IDLE) && fifo_ready)
+		first_round <= 1'b1;
+	else if (cur_te_state == COR_FINISH)
+		first_round <= 1'b0;
+
+noise_calc u_noise_calc
+(
+		.clk                (clk              ),
+		.rst_b              (rst_b            ),
+		.data_down_en       (data_down_en[0] & first_round),
+		.i_data_down        (i_data_down[0]   ),
+		.q_data_down        (q_data_down[0]   ),
+		.shift_code         (shift_code[0] & first_round),
+		.smooth_factor      (te_noise_config  ),
+		.set_noise_floor    (te_reg_cs && te_wr && (te_addr[5:0] == `TE_NOISE_FLOOR)),
+		.noise_floor_i      (te_d4wt[15:0]    ),
+		.noise_floor        (te_noise_floor   )
+);
 
 endmodule

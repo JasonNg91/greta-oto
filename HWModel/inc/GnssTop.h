@@ -1,3 +1,11 @@
+//----------------------------------------------------------------------
+// GnssTop.cpp:
+//   GNSS baseband top module class declaration
+//
+//          Copyright (C) 2020-2029 by Jun Mo, All rights reserved.
+//
+//----------------------------------------------------------------------
+
 #if !defined __BB_TOP_H__
 #define __BB_TOP_H__
 
@@ -34,9 +42,6 @@ public:
 	reg_uint InterruptFlag;				// 4bit, bit8~11
 	reg_uint IntMask;					// 4bit, bit8~11
 
-
-	int Process(int ReadBlockSize);
-
 	unsigned int MemCodeBuffer[128*100];
 	CIfFile IfFile;
 	CTeFifoMem TeFifo;
@@ -44,6 +49,9 @@ public:
 	CAcqEngine AcqEngine;
 	complex_int *FileData;
 	unsigned char *SampleQuant;
+
+	int Process(int ReadBlockSize);
+	void SetInputFile(char *FileName) { IfFile.OpenIfFile(FileName); }
 
 	InterruptFunction InterruptService;
 };

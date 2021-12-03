@@ -14,6 +14,7 @@
 #include "WeilPrn.h"
 #include "MemoryPrn.h"
 #include "PrnGen.h"
+#include "NoiseCalc.h"
 
 typedef void (*DumpFunction)(S16 DumpDataI[], S16 DumpDataQ[], int CorIndex[], int DumpDataLength);
 
@@ -27,6 +28,7 @@ public:
 
 	CPrnGen *PrnGen[4];				// pointer to difference PRN generator
 	CPrnGen *PrnGen2[4];			// pointer to difference PRN generator
+	CNoiseCalc *NoiseCalc;			// pointer to noise floor calculator
 
 	reg_uint CarrierFreq;			// 32bit RO
 	reg_uint CodeFreq;				// 32bit RO
@@ -51,7 +53,7 @@ public:
 	reg_uint DumpCount;				// 16bit RW
 	reg_uint CoherentDone;			// 1bit RW
 	reg_uint MsDataDone;			// 1bit RW
-	reg_uint LastPrn;				// 1bit RW
+	reg_uint OverwriteProtect;		// 1bit RW
 	reg_uint CurrentCor;			// 3bit RW
 	reg_uint Dumping;				// 1bit RW
 	reg_uint CodeSubPhase;			// 1bit RW
@@ -65,18 +67,17 @@ public:
 	S16 AccDataQ[8];				// 16bit RW
 	int PrnIndex, PrnIndex2;
 
-	// overwrite protet registers, internal use, will be cleared at the beginning of every round
+	// overwrite protect registers, internal use, will be cleared at the beginning of every round
 	int FirstCorIndexValid;			// 1bit
 	int FirstCorIndex;				// 4bit
-	int OverwriteProtect;			// 1bit
 
+	void Reset();
+	int Correlation(unsigned int *StateBuffer, int SampleNumber, complex_int SampleData[], S16 DumpDataI[], S16 DumpDataQ[], int CorIndex[], int &DumpDataLength);
 	void FillState(unsigned int *StateBuffer);
 	void DumpState(unsigned int *StateBuffer);
-	void Reset();
-	void DownConvert(int SampleNumber, complex_int InputData[], complex_int OutputData[]);
-	int Correlation(int SampleNumber, complex_int SampleData[], S16 DumpDataI[], S16 DumpDataQ[], int CorIndex[], int &DumpDataLength);
-	virtual void AccumulateSample(S16 SampleI, S16 SampleQ, int CorCount);
-	virtual int ProcessOverflow(S16 DumpDataI[], S16 DumpDataQ[], int CorIndex[], int &CurrentLength);
+	complex_int DownConvert(complex_int InputData);
+	void AccumulateSample(complex_int Sample, int CorCount);
+	int ProcessOverflow(S16 DumpDataI[], S16 DumpDataQ[], int CorIndex[], int &CurrentLength);
 	int DumpData(S16 DumpDataI[], S16 DumpDataQ[], int CorIndex[], int &CurrentLength);
 
 	DumpFunction DumpDataOutput;	// for debug purpose
